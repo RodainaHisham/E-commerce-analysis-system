@@ -1,4 +1,3 @@
-# E-commerce-analysis-system
 # 🛒 E-Commerce Data Pipeline & Dataset
 
 A full end-to-end data engineering pipeline built on a synthetic yet realistic e-commerce dataset. The pipeline ingests raw CSV data, streams it through a multi-layer data lakehouse (Bronze → Gold), and loads it into Snowflake — all orchestrated with Apache Airflow.
