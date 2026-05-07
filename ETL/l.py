@@ -4,8 +4,8 @@ import pyspark.sql.functions as F
 from pyspark.sql.types import DoubleType
 
 
-os.environ["HADOOP_USER_NAME"]      = "root"
-os.environ["PYSPARK_PYTHON"]        = "/usr/local/bin/python3.11"
+os.environ["HADOOP_USER_NAME"] = "root"
+os.environ["PYSPARK_PYTHON"]= "/usr/local/bin/python3.11"
 os.environ["PYSPARK_DRIVER_PYTHON"] = "/usr/local/bin/python3.11"
 
 
@@ -31,11 +31,11 @@ print("Spark Connected Successfully")
 
 
 sf_options = {
-    "sfURL":      "MQINFFZ-VP41472.snowflakecomputing.com",
-    "sfUser":     "RODAINA",
-    "sfPassword": "RodainaHisham1102005",
-    "sfDatabase": "ECOMMERCE_DB",
-    "sfSchema":   "GOLD_LAYER",
+    "sfURL":"MQINFFZ-VP41472.snowflakecomputing.com",
+    "sfUser":"RODAINA",
+    "sfPassword":"RodainaHisham1102005",
+    "sfDatabase":"ECOMMERCE_DB",
+    "sfSchema":"GOLD_LAYER",
     "sfWarehouse":"COMPUTE_WH"
 }
 
