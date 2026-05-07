@@ -26,7 +26,7 @@ STREAM_PATH = "hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/stream/"
 STATIC_PATH = "hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/static/"
 BRONZE_PATH = "hdfs://hadoop-namenode:9000/user/root/datalake/bronze/ecommerce/"
 
-# ── Nested schema matching actual JSON structure ──────────────────────────────
+
 stream_schema = StructType([
     StructField("stream_type",    StringType(), True),
     StructField("event_time",     StringType(), True),
@@ -64,26 +64,25 @@ products_schema = StructType([
     StructField("brand",        StringType(), True)
 ])
 
-# ── Stream ingestion ──────────────────────────────────────────────────────────
+
 try:
     print("\nReading stream data...")
 
-    # The file is a JSON array — use multiLine mode to parse it correctly
+    
     raw_df = spark.read.option("multiLine", "true").schema(stream_schema).json(STREAM_PATH)
 
-    # If the top level is an array, explode it first
-    # Check whether the root is ArrayType by inspecting the first field name
+  
     if raw_df.schema.fields[0].name == "stream_type":
-        # Already a flat array of records — no explode needed
+       
         nested_df = raw_df
     else:
-        # Root is a single array field — explode it
+        
         array_field = raw_df.schema.fields[0].name
         nested_df = raw_df.select(explode(col(array_field)).alias("rec")) \
                           .select("rec.*")
 
 
-    # Flatten the nested `data` struct into top-level columns
+    
     flat_stream = nested_df.select(
         "stream_type", "event_time", "ingestion_time",
         col("data.event_id").alias("event_id"),
@@ -120,7 +119,7 @@ except Exception as e:
     print(f"Stream ingestion error: {e}")
     import traceback; traceback.print_exc()
 
-# ── Static ingestion ──────────────────────────────────────────────────────────
+
 try:
     print("\nReading static users...")
     users_df = spark.read.option("multiLine", "true").schema(users_schema).json(STATIC_PATH + "users.json")
