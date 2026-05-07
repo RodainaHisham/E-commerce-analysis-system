@@ -25,9 +25,7 @@ print("Spark Connected Successfully")
 BRONZE_PATH = "hdfs://hadoop-namenode:9000/user/root/datalake/bronze/ecommerce/"
 GOLD_PATH   = "hdfs://hadoop-namenode:9000/user/root/datalake/gold/ecommerce/"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# READ BRONZE LAYER
-# ══════════════════════════════════════════════════════════════════════════════
+
 print("\n=== Reading Bronze Layer ===")
 
 stream_all = spark.read.parquet(BRONZE_PATH + "stream/").cache()
@@ -42,11 +40,7 @@ bronze_products = spark.read.parquet(BRONZE_PATH + "stat_products/")
 
 print("Bronze tables loaded.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# DIMENSION TABLES
-# ══════════════════════════════════════════════════════════════════════════════
 
-# ─── dim_users ────────────────────────────────────────────────────────────────
 print("\n--- Building dim_users ---")
 
 dim_users = bronze_users.select(
@@ -62,7 +56,7 @@ dim_users = bronze_users.select(
 
 dim_users.write.mode("overwrite").parquet(GOLD_PATH + "dim_users/")
 
-# ─── dim_products ─────────────────────────────────────────────────────────────
+
 print("\n--- Building dim_products ---")
 
 avg_ratings = stream_reviews \
@@ -89,7 +83,7 @@ dim_products = bronze_products.select(
 
 dim_products.write.mode("overwrite").parquet(GOLD_PATH + "dim_products/")
 
-# ─── dim_date ─────────────────────────────────────────────────────────────────
+
 print("\n--- Building dim_date ---")
 
 order_dates      = stream_orders.select(F.to_date(F.col("event_time")).alias("date"))
@@ -123,7 +117,7 @@ dim_date = order_dates \
 dim_date.orderBy("date_id") \
     .write.mode("overwrite").parquet(GOLD_PATH + "dim_date/")
 
-# ─── dim_order_status ─────────────────────────────────────────────────────────
+
 print("\n--- Building dim_order_status ---")
 
 dim_order_status = stream_orders \
@@ -136,7 +130,7 @@ dim_order_status = stream_orders \
 
 dim_order_status.write.mode("overwrite").parquet(GOLD_PATH + "dim_order_status/")
 
-# ─── dim_event_type ───────────────────────────────────────────────────────────
+
 print("\n--- Building dim_event_type ---")
 
 dim_event_type = stream_events \
@@ -149,14 +143,7 @@ dim_event_type = stream_events \
 
 dim_event_type.write.mode("overwrite").parquet(GOLD_PATH + "dim_event_type/")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FACT TABLES
-# ══════════════════════════════════════════════════════════════════════════════
 
-# ─── fact_orders ──────────────────────────────────────────────────────────────
-# The join on "order_status" brings in status_id.
-# The final .select() deliberately omits "order_status" — only status_id is kept.
-# "order_status" is still readable inside the select expression for is_returned.
 print("\n--- Building fact_orders ---")
 
 order_items_clean = stream_order_items.select(
@@ -177,11 +164,11 @@ orders_clean = stream_orders.select(
     F.to_timestamp("event_time").alias("order_timestamp"),
     F.to_date("event_time").alias("order_date_id"),
     F.col("total_amount").cast(DoubleType()),
-    F.col("order_status")   # used to join → status_id; excluded from final select
+    F.col("order_status")   
 ) \
 .filter(F.col("order_id").isNotNull())
 
-# Intermediate joined df: has both order_status (string) AND status_id (int)
+
 joined_orders = order_items_clean \
     .join(orders_clean, on="order_id", how="inner") \
     .join(
@@ -193,14 +180,14 @@ joined_orders = order_items_clean \
         on="order_status", how="left"
     )
 
-# Final select: status_id IN, order_status OUT
+
 fact_orders = joined_orders.select(
     F.col("order_item_id"),
     F.col("order_id"),
     F.col("user_id"),
     F.col("product_id"),
     F.col("order_date_id"),
-    F.col("status_id"),                                              # FK only
+    F.col("status_id"),                                            
     F.col("order_timestamp"),
     F.col("quantity"),
     F.col("item_price"),
@@ -208,9 +195,9 @@ fact_orders = joined_orders.select(
     F.round(F.col("item_price") * F.col("quantity"), 2).alias("line_total"),
     F.col("total_amount"),
     F.when(F.col("order_status") == "Returned", 1)
-     .otherwise(0).alias("is_returned"),                            # derived then dropped
+     .otherwise(0).alias("is_returned"),                            
     F.current_timestamp().alias("gold_created_at")
-    # "order_status" string column is NOT listed → absent from parquet schema
+    
 )
 
 fact_orders \
@@ -221,12 +208,10 @@ fact_orders \
 
 print("fact_orders columns:", spark.read.parquet(GOLD_PATH + "fact_orders/").columns)
 
-# ─── fact_events ──────────────────────────────────────────────────────────────
-# The join brings in event_type_id.
-# The final .select() deliberately omits "event_type" / "event_type_name".
+
 print("\n--- Building fact_events ---")
 
-# Intermediate joined df: has both event_type (string) AND event_type_id (int)
+
 joined_events = stream_events \
     .join(
         dim_event_type,
@@ -234,17 +219,17 @@ joined_events = stream_events \
         how="left"
     )
 
-# Final select: event_type_id IN, event_type string OUT
+
 fact_events = joined_events.select(
     F.col("event_id"),
     F.col("user_id"),
     F.col("product_id"),
     F.to_date("event_time").alias("event_date_id"),
-    F.col("event_type_id"),                                         # FK only
+    F.col("event_type_id"),                                         
     F.col("event_type_id").alias("funnel_step"),
     F.to_timestamp("event_time").alias("event_timestamp"),
     F.current_timestamp().alias("gold_created_at")
-    # "event_type" / "event_type_name" strings are NOT listed → absent from parquet schema
+    
 ) \
 .filter(
     F.col("event_id").isNotNull() &
@@ -260,9 +245,7 @@ fact_events \
 
 print("fact_events columns:", spark.read.parquet(GOLD_PATH + "fact_events/").columns)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# VALIDATION SUMMARY
-# ══════════════════════════════════════════════════════════════════════════════
+
 print("\n=== Gold Layer Summary ===")
 
 summary = {
@@ -277,7 +260,7 @@ summary = {
 for table, count in summary.items():
     print(f"  {table:<20} {count:>8} rows")
 
-# ── Unpersist all caches ───────────────────────────────────────────────────────
+
 stream_all.unpersist()
 dim_users.unpersist()
 dim_products.unpersist()
