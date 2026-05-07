@@ -1,0 +1,366 @@
+ 
+x-airflow-common:
+  &airflow-common
+  # image: my-airflow:latest 
+  # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.10.4}
+
+  image: apache/airflow:2.10.4    # back to original image, no build
+  user: "0:0" 
+  environment:
+    &airflow-common-env
+    AIRFLOW_UID: ${AIRFLOW_UID:-1000}
+    AIRFLOW_GID: 0
+    AIRFLOW__CORE__EXECUTE_TASKS_NEW_PYTHON_INTERPRETER: 'true'
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-apache-spark}
+   
+  
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
+    - /var/run/docker.sock:/var/run/docker.sock
+  # user: "${AIRFLOW_UID:-50000}:0"
+  # user: "${AIRFLOW_UID:-1000}:0"
+  
+  depends_on:
+    &airflow-common-depends-on
+    postgres_airflow:
+      condition: service_healthy
+
+networks:
+  sparknet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+services:
+  # --- AIRFLOW INFRASTRUCTURE ---
+  postgres_airflow:
+    image: postgres:13
+    container_name: postgres_airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.14
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.15
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.16
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow-triggerer
+    command: triggerer
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.17
+
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    user: "0:0" # Root is needed only for the initial chown/setup
+    command:
+      - bash
+      - -c
+      - |
+        # Initialize the database
+        airflow db migrate
+        # Create the admin user (|| true prevents error if user already exists)
+        airflow users create --username airflow --password airflow --firstname Air --lastname Flow --role Admin --email airflow@example.com || true
+        # Ensure folders have correct permissions for the airflow user
+        mkdir -p /opt/airflow/dags /opt/airflow/logs /opt/airflow/plugins /opt/airflow/data
+        chown -R 50000:0 /opt/airflow
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.18
+
+  # airflow-init:
+  #   <<: *airflow-common
+  #   container_name: airflow-init
+  #   entrypoint: /bin/bash
+  #   command:
+  #     - -c
+  #     - |
+  #       mkdir -p /sources/logs /sources/dags /sources/plugins
+  #       chown -R "${AIRFLOW_UID:-50000}:0" /sources/{logs,dags,plugins}
+  #       exec /entrypoint airflow version
+  #   environment:
+  #     <<: *airflow-common-env
+  #     _AIRFLOW_DB_MIGRATE: 'true'
+  #     _AIRFLOW_WWW_USER_CREATE: 'true'
+  #     _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+  #     _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+  #   user: "0:0"
+  #   volumes:
+  #     - ${AIRFLOW_PROJ_DIR:-.}:/sources
+  #   networks:
+  #     sparknet:
+  #       ipv4_address: 172.30.1.18
+
+  # airflow-init:
+  #   <<: *airflow-common
+  #   container_name: airflow-init
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+      
+  #   command: bash -c "airflow db migrate && airflow users create --username airflow --password airflow --firstname Air --lastname Flow --role Admin --email airflow@example.com || true"
+
+    # Notice: NO entrypoint, NO command, and NO user: "0:0" here.
+    # It now correctly inherits the 'airflow' user and PATH from your common section.
+    # environment:
+    #   <<: *airflow-common-env
+    #   _AIRFLOW_DB_MIGRATE: 'true'
+    #   _AIRFLOW_WWW_USER_CREATE: 'true'
+    #   _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+    #   _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    # networks:
+    #   sparknet:
+    #     ipv4_address: 172.30.1.18
+
+
+
+
+  # --- SPARK & JUPYTER ---
+  # jupyter:
+  #   image: jupyter/pyspark-notebook:latest
+  #   container_name: spark-jupyter
+  #   networks:
+  #     sparknet:
+  #       ipv4_address: 172.30.1.13
+  #   ports:
+  #     - "8899:8888"
+  #     - "4040:4040"
+  #   volumes:
+  #     - ./notebooks:/home/jovyan/work
+  #     - ./jars:/opt/spark/jars
+  #     - ./data:/opt/airflow/data
+  #   environment:
+  #     - JUPYTER_ENABLE_LAB=yes
+  #     - GRANT_SUDO=yes
+  #     - SPARK_UI_PORT=4040
+  #     - PYSPARK_SUBMIT_ARGS=--jars /opt/spark/jars/* pyspark-shell
+  #     - HADOOP_CONF_DIR=/etc/hadoop   
+  #     - YARN_RESOURCEMANAGER_HOSTNAME=resourcemanager
+  #     # - JUPYTER_TOKEN=""
+  #   user: root
+  #   command: start-notebook.sh --NotebookApp.token=''
+  #   # command: start-notebook.sh
+
+
+  # jupyter:
+  #   image: jupyter/pyspark-notebook:latest
+  #   container_name: spark-jupyter
+  #   # networks:
+  #   #   sparknet:
+  #   #     ipv4_address: 172.30.1.13
+  #   ports:
+  #     - "8899:8888"
+  #     - "4040:4040"
+  #   volumes:
+  #     - ./notebooks:/home/jovyan/work
+  #     - ./jars:/opt/spark/jars
+  #     - ./data:/opt/airflow/data
+  #   environment:
+  #     - JUPYTER_ENABLE_LAB=yes
+  #     - GRANT_SUDO=yes
+  #     - SPARK_UI_PORT=4040
+  #     # - PYSPARK_SUBMIT_ARGS=--jars /opt/spark/jars/* pyspark-shell
+  #     - HADOOP_CONF_DIR=/etc/hadoop   
+  #     - YARN_RESOURCEMANAGER_HOSTNAME=resourcemanager
+  #     # - JUPYTER_TOKEN=""  # <--- UNCOMMENTED THIS
+  #   # user: root
+  #   # REMOVED the 'command' lines entirely. 
+  #   # The image will now use the internal 'start-notebook.py' automatically.
+
+  # jupyter:
+  #   image: jupyter/pyspark-notebook:latest
+  #   # container_name: spark-jupyter
+  #   ports:
+  #     - "8899:8888"
+  #   # volumes:
+  #   #   - .\\notebooks:/home/jovyan/work
+  #   environment:
+  #     - JUPYTER_ENABLE_LAB=yes
+
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    container_name: spark-jupyter
+    ports:
+      - "8899:8888"
+      - "4040:4040"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - NB_UID=1000
+      - NB_GID=100
+      - CHOWN_HOME=yes
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./data:/home/jovyan/data
+    command: "start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''"
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.13
+  # --- HADOOP CLUSTER ---
+  hadoop-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-namenode
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - HDFS_CONF_dfs_namenode_rpc-address=hadoop-namenode:9000
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop-namenode:/hadoop/dfs/name
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.21
+
+  hadoop-datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-datanode1
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - HDFS_CONF_dfs_namenode_rpc-address=hadoop-namenode:9000
+      - HDFS_CONF_dfs_datanode_hostname=hadoop-datanode1
+    ports:
+      - "9864:9864"
+    volumes:
+      - hadoop-datanode1:/hadoop/dfs/data
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.22
+    depends_on:
+      - hadoop-namenode
+
+  hadoop-datanode2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-datanode2
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - HDFS_CONF_dfs_namenode_rpc-address=hadoop-namenode:9000
+      - HDFS_CONF_dfs_datanode_hostname=hadoop-datanode2
+    ports:
+      - "9865:9864"
+    volumes:
+      - hadoop-datanode2:/hadoop/dfs/data
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.23
+    depends_on:
+      - hadoop-namenode
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+    ports:
+      - "8088:8088"
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.24
+    depends_on:
+      - hadoop-namenode
+
+  hadoop-nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-nodemanager
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.25
+    depends_on:
+      - resourcemanager
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+    volumes:
+      - ./notebooks:/home/jovyan/work
+
+  hadoop-nodemanager2:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: hadoop-nodemanager2
+    networks:
+      sparknet:
+        ipv4_address: 172.30.1.26
+    depends_on:
+      - resourcemanager
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://hadoop-namenode:9000
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+    volumes:
+      - ./notebooks:/home/jovyan/work
+
+volumes:
+  postgres-db-volume:
+  hadoop-namenode:
+  hadoop-datanode1:
+  hadoop-datanode2:
