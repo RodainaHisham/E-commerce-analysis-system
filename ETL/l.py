@@ -3,12 +3,12 @@ from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from pyspark.sql.types import DoubleType
 
-# ── Environment ───────────────────────────────────────────────────────────────
+
 os.environ["HADOOP_USER_NAME"]      = "root"
 os.environ["PYSPARK_PYTHON"]        = "/usr/local/bin/python3.11"
 os.environ["PYSPARK_DRIVER_PYTHON"] = "/usr/local/bin/python3.11"
 
-# ── Spark Session ─────────────────────────────────────────────────────────────
+
 spark = SparkSession.builder \
     .appName("EcommerceAnalysisSystem_Load") \
     .master("yarn") \
@@ -29,7 +29,7 @@ spark = SparkSession.builder \
 
 print("Spark Connected Successfully")
 
-# ── Snowflake connection options ───────────────────────────────────────────────
+
 sf_options = {
     "sfURL":      "MQINFFZ-VP41472.snowflakecomputing.com",
     "sfUser":     "RODAINA",
@@ -41,9 +41,7 @@ sf_options = {
 
 GOLD_PATH = "hdfs://hadoop-namenode:9000/user/root/datalake/gold/ecommerce/"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def check_table_exists(table_name: str) -> bool:
     query = f"""
@@ -186,9 +184,7 @@ def load_fact_to_snowflake(table_name: str, dedup_key: str = None):
         raise
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
+
 try:
     print("\n========== DIMENSIONS ==========")
 
@@ -200,15 +196,6 @@ try:
 
     print("\n========== FACTS ==========")
 
-    # ── IMPORTANT ────────────────────────────────────────────────────────────
-    # The schema of fact_orders and fact_events changed:
-    #   fact_orders: ORDER_STATUS (string) removed → STATUS_ID (int) kept
-    #   fact_events: EVENT_TYPE  (string) removed → EVENT_TYPE_ID (int) kept
-    #
-    # Snowflake's append mode will NOT alter an existing table's columns.
-    # We must DROP the old tables first so they are recreated with the
-    # correct schema on the first append below.
-    # ─────────────────────────────────────────────────────────────────────────
     print("\n  Dropping old fact tables to force schema rebuild...")
     drop_table_if_exists("fact_orders")
     drop_table_if_exists("fact_events")
