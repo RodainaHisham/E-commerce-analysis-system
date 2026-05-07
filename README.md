@@ -117,7 +117,7 @@ A full end-to-end data engineering pipeline built on a synthetic yet realistic e
 
 ## ⚙️ Pipeline Components
 
-###Streaming (`Simulation.ipynb`)
+Streaming (`Simulation.ipynb`)
  - simulates an E-commerce platform streaming data by sending data in batches with a previously determind sleep time (0.125s in code)
 
 ### Task 1 — Extraction (`e.py`)
@@ -165,7 +165,7 @@ PySpark job using the Snowflake Spark connector:
 
 ---
 
-## 🚀 Airflow DAG
+## Airflow DAG
 
 The pipeline is orchestrated as a linear Airflow DAG:
 
@@ -182,7 +182,7 @@ Extracting_data → Transformation → Archive_raw_files_to_HDFS → Loading
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
