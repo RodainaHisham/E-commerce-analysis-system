@@ -12,16 +12,16 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = "/usr/local/bin/python3.11"
 spark = SparkSession.builder \
     .appName("EcommerceAnalysisSystem_Load") \
     .master("yarn") \
-    .config("spark.hadoop.fs.defaultFS",                           "hdfs://hadoop-namenode:9000") \
-    .config("spark.hadoop.yarn.resourcemanager.hostname",          "resourcemanager") \
-    .config("spark.hadoop.yarn.resourcemanager.address",           "resourcemanager:8032") \
+    .config("spark.hadoop.fs.defaultFS","hdfs://hadoop-namenode:9000") \
+    .config("spark.hadoop.yarn.resourcemanager.hostname","resourcemanager") \
+    .config("spark.hadoop.yarn.resourcemanager.address","resourcemanager:8032") \
     .config("spark.hadoop.yarn.resourcemanager.scheduler.address", "resourcemanager:8030") \
-    .config("spark.driver.host",        "172.30.1.13") \
+    .config("spark.driver.host","172.30.1.13") \
     .config("spark.driver.bindAddress", "0.0.0.0") \
     .config("spark.executor.memory", "512m") \
     .config("spark.yarn.am.memory",  "512m") \
     .config("spark.yarn.appMasterEnv.PYSPARK_PYTHON", "/usr/local/bin/python3.11") \
-    .config("spark.executorEnv.PYSPARK_PYTHON",       "/usr/local/bin/python3.11") \
+    .config("spark.executorEnv.PYSPARK_PYTHON","/usr/local/bin/python3.11") \
     .config("spark.jars.packages",
             "net.snowflake:snowflake-jdbc:3.13.33,"
             "net.snowflake:spark-snowflake_2.12:2.12.0-spark_3.3") \
