@@ -63,10 +63,7 @@ def check_table_exists(table_name: str) -> bool:
 
 
 def drop_table_if_exists(table_name: str):
-    """
-    Unconditionally drops a table from Snowflake GOLD_LAYER.
-    Used to force a clean schema rebuild when column definitions change.
-    """
+  
     sf_utils = spark._jvm.net.snowflake.spark.snowflake.Utils
     full_name = f"ECOMMERCE_DB.GOLD_LAYER.{table_name.upper()}"
     try:
@@ -77,15 +74,7 @@ def drop_table_if_exists(table_name: str):
 
 
 def load_dim_to_snowflake(table_name: str, skip_if_exists: bool = False):
-    """
-    Dimension loader — atomic swap pattern.
 
-    First run  → write to _TEMP, RENAME _TEMP → final.
-    Subsequent → write to _TEMP, SWAP _TEMP ↔ final, DROP _TEMP.
-
-    skip_if_exists=True  → dim_date only (stable calendar, load once).
-    skip_if_exists=False → all other dims (refresh every run).
-    """
     final_table = f"ECOMMERCE_DB.GOLD_LAYER.{table_name.upper()}"
     temp_table  = f"{final_table}_TEMP"
 
@@ -130,16 +119,7 @@ def load_dim_to_snowflake(table_name: str, skip_if_exists: bool = False):
 
 
 def load_fact_to_snowflake(table_name: str, dedup_key: str = None):
-    """
-    Fact loader — incremental append pattern.
 
-    Reads full parquet from HDFS, deduplicates against existing Snowflake rows
-    on dedup_key, then appends only the new rows.
-
-    NOTE: Call drop_table_if_exists() before this function whenever the
-    parquet schema has changed (e.g. columns added/removed). The function
-    will then recreate the table with the correct schema on first append.
-    """
     target_table = f"ECOMMERCE_DB.GOLD_LAYER.{table_name.upper()}"
 
     print(f"\n--- Loading fact: {table_name} ---")
