@@ -165,20 +165,10 @@ PySpark job using the Snowflake Spark connector:
 
 ---
 
-## Airflow DAG
-
+Airflow DAG
 The pipeline is orchestrated as a linear Airflow DAG:
-
-```
-Extracting_data → Transformation → Archive_raw_files_to_HDFS → Loading
-```
-
-| Task | Operator | Description |
-|------|----------|-------------|
-| `Extracting_data` | `BashOperator` | Runs `e.py` inside the Spark/Jupyter container |
-| `Transformation` | `BashOperator` | Runs `t.py` via `spark-submit` on YARN |
-| `Archive_raw_files_to_HDFS` | `BashOperator` | Moves JSON to HDFS archive and clears landing zone |
-| `Loading` | `BashOperator` | Runs `l.py` with Snowflake connector JARs |
+Copy_to_HDFS → Extracting_data → Transformation → Archive_raw_files_to_HDFS → Loading
+TaskOperatorDescriptionCopy_to_HDFSBashOperatorCreates HDFS directories and uploads raw stream/static JSON files from the Jupyter containerExtracting_dataBashOperatorRuns e.py inside the Spark/Jupyter container via spark-submitTransformationBashOperatorRuns t.py via spark-submit on the Spark/Jupyter containerArchive_raw_files_to_HDFSBashOperatorCopies JSON files to the HDFS bronze archive, then clears the local landing zoneLoadingBashOperatorRuns l.py via spark-submit with Snowflake JDBC and Spark connector JARs
 
 ---
 
