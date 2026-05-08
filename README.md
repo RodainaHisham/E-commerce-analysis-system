@@ -6,7 +6,8 @@ A full end-to-end data engineering pipeline built on a synthetic yet realistic e
 
 ## 📐 Architecture Overview
 
-<img width="645" height="252" alt="image" src="https://github.com/user-attachments/assets/f4ee3f43-8d6f-4de9-a9e6-a1540b38cfd1" />
+<img width="565" height="279" alt="image" src="https://github.com/user-attachments/assets/cefc71b0-e1a2-4d41-9a5d-142c8d9f0473" />
+
 
 ---
 
