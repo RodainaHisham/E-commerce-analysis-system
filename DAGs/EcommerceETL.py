@@ -12,19 +12,27 @@ with DAG(
     task1 = BashOperator(
         task_id="Copy_to_HDFS",
         bash_command=(
+            
             "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
-            "/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/stream/ && "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/stream/' && "
 
             "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
-            "/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/static/ && "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/static/' && "
 
-            "docker exec -e HADOOP_USER_NAME=root -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 spark-jupyter "
-            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /home/jovyan/data/raw_ecommerce/stream/*.json "
-            "hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/stream/' && "
+           
+            "docker cp spark-jupyter:/home/jovyan/data/raw_ecommerce/stream/. /tmp/stream/ && "
+            "docker cp spark-jupyter:/home/jovyan/data/raw_ecommerce/static/. /tmp/static/ && "
 
-            "docker exec -e HADOOP_USER_NAME=root -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 spark-jupyter "
-            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /home/jovyan/data/raw_ecommerce/static/*.json "
-            "hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/static/'"
+            #
+            "docker cp /tmp/stream/. hadoop-namenode:/tmp/stream/ && "
+            "docker cp /tmp/static/. hadoop-namenode:/tmp/static/ && "
+
+            
+            "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /tmp/stream/*.json hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/stream/' && "
+
+            "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /tmp/static/*.json hdfs://hadoop-namenode:9000/user/jovyan/raw_ecommerce/static/'"
         )
     )
 
@@ -47,20 +55,29 @@ with DAG(
     task4 = BashOperator(
         task_id="Archive_raw_files_to_HDFS",
         bash_command=(
+            
             "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
-            "/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p /user/root/datalake/bronze/archived/stream/ && "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p /user/root/datalake/bronze/archived/stream/' && "
 
             "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
-            "/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p /user/root/datalake/bronze/archived/static/ && "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -mkdir -p /user/root/datalake/bronze/archived/static/' && "
 
-            "docker exec -e HADOOP_USER_NAME=root -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 spark-jupyter "
-            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /home/jovyan/data/raw_ecommerce/stream/*.json "
-            "/user/root/datalake/bronze/archived/stream/ || true' && "
+            
+            "docker cp spark-jupyter:/home/jovyan/data/raw_ecommerce/stream/. /tmp/archive_stream/ && "
+            "docker cp spark-jupyter:/home/jovyan/data/raw_ecommerce/static/. /tmp/archive_static/ && "
 
-            "docker exec -e HADOOP_USER_NAME=root -e JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 spark-jupyter "
-            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /home/jovyan/data/raw_ecommerce/static/*.json "
-            "/user/root/datalake/bronze/archived/static/ || true' && "
+            
+            "docker cp /tmp/archive_stream/. hadoop-namenode:/tmp/archive_stream/ && "
+            "docker cp /tmp/archive_static/. hadoop-namenode:/tmp/archive_static/ && "
 
+            
+            "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /tmp/archive_stream/*.json /user/root/datalake/bronze/archived/stream/ || true' && "
+
+            "docker exec -e HADOOP_USER_NAME=root hadoop-namenode "
+            "sh -c '/opt/hadoop-3.2.1/bin/hdfs dfs -put -f /tmp/archive_static/*.json /user/root/datalake/bronze/archived/static/ || true' && "
+
+            
             "docker exec spark-jupyter sh -c 'rm -f /home/jovyan/data/raw_ecommerce/stream/*.json || true' && "
             "docker exec spark-jupyter sh -c 'rm -f /home/jovyan/data/raw_ecommerce/static/*.json || true'"
         )
