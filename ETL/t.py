@@ -29,9 +29,7 @@ GOLD_PATH   = "hdfs://hadoop-namenode:9000/user/root/datalake/gold/ecommerce/"
 TODAY = str(date.today())
 print(f"Processing date: {TODAY}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# READ BRONZE LAYER
-# ══════════════════════════════════════════════════════════════════════════════
+
 print("\n=== Reading Bronze Layer ===")
 
 stream_all = spark.read.parquet(BRONZE_PATH + "stream/").cache()
@@ -46,11 +44,7 @@ bronze_products = spark.read.parquet(BRONZE_PATH + "stat_products/")
 
 print("Bronze tables loaded.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# DIMENSION TABLES
-# ══════════════════════════════════════════════════════════════════════════════
 
-# ─── dim_users ────────────────────────────────────────────────────────────────
 print("\n--- Building dim_users ---")
 
 dim_users = bronze_users.select(
@@ -67,7 +61,7 @@ dim_users = bronze_users.select(
 dim_users.write.mode("overwrite").parquet(GOLD_PATH + "dim_users/")
 print(f"dim_users written: {dim_users.count()} rows")
 
-# ─── dim_products ─────────────────────────────────────────────────────────────
+
 print("\n--- Building dim_products ---")
 
 avg_ratings = stream_reviews \
@@ -95,7 +89,7 @@ dim_products = bronze_products.select(
 dim_products.write.mode("overwrite").parquet(GOLD_PATH + "dim_products/")
 print(f"dim_products written: {dim_products.count()} rows")
 
-# ─── dim_date ─────────────────────────────────────────────────────────────────
+
 print("\n--- Building dim_date ---")
 
 order_dates      = stream_orders.select(F.to_date(F.col("event_time")).alias("date"))
@@ -140,9 +134,7 @@ except Exception:
 dim_date.orderBy("date_id").write.mode("overwrite").parquet(dim_date_path)
 print(f"dim_date written: {dim_date.count()} rows")
 
-# ─── dim_order_status ─────────────────────────────────────────────────────────
-# FIX: replaced monotonically_increasing_id() with F.abs(F.hash()) so status_id
-#      is deterministic across runs — foreign keys in fact_orders stay valid.
+
 print("\n--- Building dim_order_status ---")
 
 dim_order_status = stream_orders \
@@ -156,8 +148,6 @@ dim_order_status = stream_orders \
 dim_order_status.write.mode("overwrite").parquet(GOLD_PATH + "dim_order_status/")
 print(f"dim_order_status written: {dim_order_status.count()} rows")
 
-# ─── dim_event_type ───────────────────────────────────────────────────────────
-# FIX: same deterministic hash approach as dim_order_status.
 print("\n--- Building dim_event_type ---")
 
 dim_event_type = stream_events \
@@ -171,16 +161,11 @@ dim_event_type = stream_events \
 dim_event_type.write.mode("overwrite").parquet(GOLD_PATH + "dim_event_type/")
 print(f"dim_event_type written: {dim_event_type.count()} rows")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FACT TABLES
-# FIX: removed .filter(date_col == TODAY) before writing.
-#      partitionBy + dynamic overwrite already replaces only today's partition;
-#      the pre-write filter was preventing historical partitions from accumulating.
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
-# ─── fact_orders ──────────────────────────────────────────────────────────────
+
 print("\n--- Building fact_orders ---")
 
 order_items_clean = stream_order_items.select(
@@ -233,7 +218,7 @@ fact_orders = joined_orders.select(
      .otherwise(0).alias("is_returned"),
     F.current_timestamp().alias("gold_created_at")
 )
-# FIX: no TODAY filter here — dynamic partition overwrite handles isolation
+
 
 fact_orders \
     .repartition(4, F.col("order_date_id")) \
@@ -245,7 +230,7 @@ fact_orders \
 print("fact_orders columns:", spark.read.parquet(GOLD_PATH + "fact_orders/").columns)
 print(f"fact_orders rows written: {fact_orders.count()}")
 
-# ─── fact_events ──────────────────────────────────────────────────────────────
+
 print("\n--- Building fact_events ---")
 
 joined_events = stream_events \
@@ -270,7 +255,7 @@ fact_events = joined_events.select(
     F.col("user_id").isNotNull() &
     F.col("product_id").isNotNull()
 )
-# FIX: no TODAY filter here — dynamic partition overwrite handles isolation
+
 
 fact_events \
     .repartition(4, F.col("event_date_id")) \
@@ -282,9 +267,7 @@ fact_events \
 print("fact_events columns:", spark.read.parquet(GOLD_PATH + "fact_events/").columns)
 print(f"fact_events rows written: {fact_events.count()}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# VALIDATION SUMMARY
-# ══════════════════════════════════════════════════════════════════════════════
+
 print("\n=== Gold Layer Summary ===")
 
 summary = {
@@ -299,7 +282,7 @@ summary = {
 for table, count in summary.items():
     print(f"  {table:<20} {count:>8} rows")
 
-# ── Unpersist all caches ───────────────────────────────────────────────────────
+
 stream_all.unpersist()
 dim_users.unpersist()
 dim_products.unpersist()
@@ -309,3 +292,9 @@ dim_event_type.unpersist()
 
 spark.stop()
 print("\nSpark Session Stopped")
+
+
+
+#=> transformation per day
+#=> hashing to order status and event type ids to maintain the same id each day/each run
+#=> dynamic overwrite mode overwrites only changed partitions and leave rest/previous untouched 
