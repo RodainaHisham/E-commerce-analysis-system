@@ -1,0 +1,243 @@
+import pandas as pd
+import time
+import os
+import json
+import numpy as np
+from datetime import datetime
+
+DATA_DIR = "/home/jovyan/data/commerce_data"
+LANDING_ZONE = "/home/jovyan/data/raw_ecommerce"
+
+BATCH_SIZE = 10
+SLEEP_TIME = 2
+
+STREAM_DIR = os.path.join(LANDING_ZONE, "stream")
+STATIC_DIR = os.path.join(LANDING_ZONE, "static")
+
+os.makedirs(STREAM_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+
+def read_csv(path):
+    try:
+        df = pd.read_csv(path)
+        df.columns = df.columns.str.strip()
+        return df
+    except Exception as e:
+        print(f"ERROR reading {path}: {e}")
+        return pd.DataFrame()
+
+
+def clean_for_json(obj):
+    if isinstance(obj, dict):
+        return {k: clean_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_for_json(v) for v in obj]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return float(obj)
+    return obj
+
+
+# loading...
+print(f"Loading CSV files...")
+events = read_csv(os.path.join(DATA_DIR, "events.csv"))
+orders = read_csv(os.path.join(DATA_DIR, "orders.csv"))
+order_items = read_csv(os.path.join(DATA_DIR, "order_items.csv"))
+reviews = read_csv(os.path.join(DATA_DIR, "reviews.csv"))
+users = read_csv(os.path.join(DATA_DIR, "users.csv"))
+products = read_csv(os.path.join(DATA_DIR, "products.csv"))
+
+print(f"Loaded: events={len(events)}, orders={len(orders)}, items={len(order_items)}, reviews={len(reviews)}")
+
+
+# stream data preparation
+if not events.empty and 'event_timestamp' in events.columns:
+    events["event_time"] = pd.to_datetime(events["event_timestamp"], errors="coerce")
+
+if not orders.empty and 'order_date' in orders.columns:
+    orders["event_time"] = pd.to_datetime(orders["order_date"], errors="coerce")
+
+if not order_items.empty and not orders.empty:
+    order_items = order_items.merge(
+        orders[["order_id", "event_time"]],
+        on="order_id",
+        how="left"
+    )
+
+if not reviews.empty and 'review_date' in reviews.columns:
+    reviews["event_time"] = pd.to_datetime(reviews["review_date"], errors="coerce")
+
+
+
+today = pd.Timestamp.now().normalize()
+
+min_date = events["event_time"].min()
+max_date = events["event_time"].max()
+date_range = (max_date - min_date).days
+
+day_offset = today.dayofyear % (date_range + 1)
+target_date = (min_date + pd.Timedelta(days=day_offset)).normalize()
+
+print(f"Simulating data for: {target_date.date()}")
+
+events    = events[events["event_time"].dt.normalize()    == target_date]
+orders    = orders[orders["event_time"].dt.normalize()    == target_date]
+reviews   = reviews[reviews["event_time"].dt.normalize()  == target_date]
+
+
+if not orders.empty:
+    order_items = order_items[order_items["order_id"].isin(orders["order_id"])]
+else:
+    order_items = order_items.iloc[0:0]  # empty
+
+print(f"After filter: events={len(events)}, orders={len(orders)}, items={len(order_items)}, reviews={len(reviews)}")
+
+
+
+# data streaming structure
+def build_event_record(row, stream_type):
+    base = {
+        "stream_type": stream_type,
+        "event_time": row.get("event_time")
+    }
+
+    if stream_type == "events":
+        base["data"] = {
+            "event_id": row.get("event_id"),
+            "user_id": row.get("user_id"),
+            "product_id": row.get("product_id"),
+            "event_type": row.get("event_type"),
+        }
+
+    elif stream_type == "orders":
+        base["data"] = {
+            "order_id": row.get("order_id"),
+            "user_id": row.get("user_id"),
+            "total_amount": row.get("total_amount"),
+            "order_status": row.get("order_status"),
+        }
+
+    elif stream_type == "order_items":
+        base["data"] = {
+            "order_item_id": row.get("order_item_id"),
+            "order_id": row.get("order_id"),
+            "product_id": row.get("product_id"),
+            "quantity": row.get("quantity"),
+            "item_price": row.get("item_price"),
+        }
+
+    elif stream_type == "reviews":
+        base["data"] = {
+            "review_id": row.get("review_id"),
+            "product_id": row.get("product_id"),
+            "user_id": row.get("user_id"),
+            "rating": row.get("rating"),
+            "review_text": row.get("review_text"),
+        }
+
+    return base
+
+
+# static data
+try:
+    if not users.empty:
+        users_records = clean_for_json(users.to_dict(orient="records"))
+        with open(os.path.join(STATIC_DIR, "users.json"), 'w') as f:
+            json.dump(users_records, f, indent=2)
+        print(f"Static table written: users ({len(users)} records)")
+
+    if not products.empty:
+        products_records = clean_for_json(products.to_dict(orient="records"))
+        with open(os.path.join(STATIC_DIR, "products.json"), 'w') as f:
+            json.dump(products_records, f, indent=2)
+        print(f"Static table written: products ({len(products)} records)")
+
+except Exception as e:
+    print(f"ERROR writing static tables: {e}")
+
+
+# create stream records
+records = []
+
+for df, name in [(events, 'events'), (orders, 'orders'), (order_items, 'order_items'), (reviews, 'reviews')]:
+    if not df.empty:
+        print(f"Adding {name} to stream: {len(df)} records")
+
+        for _, row in df.iterrows():
+            if pd.isna(row.get("event_time")):
+                continue
+
+            record = build_event_record(row, name)
+            records.append(record)
+
+if not records:
+    print(f"ERROR: No data to stream!")
+    exit(1)
+
+
+# priority
+unified = pd.DataFrame(records)
+unified["event_time"] = pd.to_datetime(unified["event_time"])
+
+priority_map = {
+    "events": 0,
+    "orders": 1,
+    "order_items": 2,
+    "reviews": 3
+}
+
+unified["priority"] = unified["stream_type"].map(priority_map).fillna(99)
+
+unified = unified.sort_values(
+    ["event_time", "priority"]
+).reset_index(drop=True)
+
+print(f"Total streaming events: {len(unified)}")
+
+if not unified.empty:
+    min_time = unified["event_time"].min()
+    max_time = unified["event_time"].max()
+    print(f"Time range: {min_time} to {max_time}")
+
+
+# stream simulation
+print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Streaming started...")
+
+try:
+    batch_num = 1
+    for i in range(0, len(unified), BATCH_SIZE):
+
+        batch_start_time = datetime.now()
+        chunk = unified.iloc[i:i + BATCH_SIZE].copy()
+
+        events_count  = len(chunk[chunk["stream_type"] == "events"])
+        orders_count  = len(chunk[chunk["stream_type"] == "orders"])
+        items_count   = len(chunk[chunk["stream_type"] == "order_items"])
+        reviews_count = len(chunk[chunk["stream_type"] == "reviews"])
+
+        chunk["ingestion_time"] = batch_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        chunk["event_time"] = chunk["event_time"].astype(str)
+
+        records = clean_for_json(chunk.to_dict(orient="records"))
+
+        file_id = batch_start_time.strftime("%Y%m%d_%H%M%S_%f")
+        path = os.path.join(STREAM_DIR, f"batch_{file_id}.json")
+
+        with open(path, 'w') as f:
+            json.dump(records, f, indent=2)
+
+        print(f"Batch {batch_num} | events={events_count} | orders={orders_count} | items={items_count} | reviews={reviews_count} | [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]")
+
+        batch_num += 1
+
+        if i + BATCH_SIZE < len(unified):
+            time.sleep(SLEEP_TIME)
+
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Streaming completed!")
+
+except KeyboardInterrupt:
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Streaming stopped by user")
+except Exception as e:
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error: {e}")
