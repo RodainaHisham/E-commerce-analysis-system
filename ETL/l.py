@@ -198,3 +198,5 @@ except Exception as e:
 finally:
     spark.stop()
     print("Spark Session Stopped")
+#data loaded every day 
+# dedup keys 
