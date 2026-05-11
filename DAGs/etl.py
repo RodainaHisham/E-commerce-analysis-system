@@ -5,7 +5,7 @@ from datetime import datetime
 with DAG(
     dag_id="E_Pipeline",
     start_date=datetime(2024, 1, 1),
-    schedule_interval="0 22 * * *",  # 5:00 AM Egypt time (UTC+3)
+    schedule_interval="0 22 * * *", 
     catchup=False
 ) as dag:
 
@@ -16,12 +16,11 @@ with DAG(
             "jupyter nbconvert --to notebook --execute --inplace "
             "/home/jovyan/work/Simulation.ipynb"
         )
-    )  # FIX: closing parenthesis was misindented in original
+    )  
 
     task1 = BashOperator(
         task_id="Copy_to_HDFS",
         bash_command=(
-            # Clean up stale temp folders first
             "rm -rf /tmp/stream/ /tmp/static/ && "
             "mkdir -p /tmp/stream/ /tmp/static/ && "
 
@@ -64,7 +63,6 @@ with DAG(
     task4 = BashOperator(
         task_id="Archive_raw_files_to_HDFS",
         bash_command=(
-            # Clean up stale archive temp folders first
             "rm -rf /tmp/archive_stream/ /tmp/archive_static/ && "
             "mkdir -p /tmp/archive_stream/ /tmp/archive_static/ && "
 
@@ -102,5 +100,5 @@ with DAG(
         )
     )
 
-    # FIX: task0 added to the chain — was defined but never connected
+
     task0 >> task1 >> task2 >> task3 >> task4 >> task5
