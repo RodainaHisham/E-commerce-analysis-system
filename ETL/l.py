@@ -4,12 +4,12 @@ import pyspark.sql.functions as F
 from pyspark.sql.types import DoubleType
 from datetime import date
 
-# ── Environment ───────────────────────────────────────────────────────────────
+
 os.environ["HADOOP_USER_NAME"]      = "root"
 os.environ["PYSPARK_PYTHON"]        = "/usr/local/bin/python3.11"
 os.environ["PYSPARK_DRIVER_PYTHON"] = "/usr/local/bin/python3.11"
 
-# ── Spark Session ─────────────────────────────────────────────────────────────
+
 spark = SparkSession.builder \
     .appName("EcommerceAnalysisSystem_Load") \
     .master("yarn") \
@@ -30,7 +30,7 @@ spark = SparkSession.builder \
 
 print("Spark Connected Successfully")
 
-# ── Snowflake connection options ───────────────────────────────────────────────
+
 sf_options = {
     "sfURL":      "MQINFFZ-VP41472.snowflakecomputing.com",
     "sfUser":     "RODAINA",
@@ -45,9 +45,7 @@ GOLD_PATH = "hdfs://hadoop-namenode:9000/user/root/datalake/gold/ecommerce/"
 TODAY = str(date.today())
 print(f"Loading date: {TODAY}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
+
 
 def check_table_exists(table_name: str) -> bool:
     query = f"""
@@ -184,16 +182,11 @@ def load_fact_to_snowflake(table_name: str, dedup_key: str, date_col: str):
         raise
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
+
 try:
     print("\n========== DIMENSIONS ==========")
 
-    # FIX: dim_date changed to skip_if_exists=False so new dates are loaded
-    #      every run (t.py merges new dates into HDFS Gold each day, but the
-    #      original skip_if_exists=True meant Snowflake never received them
-    #      after the very first pipeline run).
+ 
     load_dim_to_snowflake("dim_date",         skip_if_exists=False)
     load_dim_to_snowflake("dim_order_status", skip_if_exists=False)
     load_dim_to_snowflake("dim_event_type",   skip_if_exists=False)
