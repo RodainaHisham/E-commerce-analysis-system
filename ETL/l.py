@@ -67,10 +67,6 @@ def check_table_exists(table_name: str) -> bool:
 
 
 def load_dim_to_snowflake(table_name: str, skip_if_exists: bool = False):
-    """
-    Dimensions are small and fully reloaded every run.
-    Uses a TEMP → SWAP pattern for atomic replacement.
-    """
     final_table = f"COMMERCE_DB.GOLD_LAYER.{table_name.upper()}"
     temp_table  = f"{final_table}_TEMP"
 
@@ -120,12 +116,7 @@ def load_dim_to_snowflake(table_name: str, skip_if_exists: bool = False):
 
 
 def load_fact_to_snowflake(table_name: str, dedup_key: str, date_col: str):
-    """
-    Facts are loaded incrementally:
-      1. Read ONLY today's partition from HDFS Gold.
-      2. Dedup against Snowflake using dedup_key (handles pipeline re-runs safely).
-      3. Append only genuinely new rows.
-    """
+
     target_table = f"COMMERCE_DB.GOLD_LAYER.{table_name.upper()}"
 
     print(f"\n--- Loading fact: {table_name} (date={TODAY}) ---")
