@@ -230,5 +230,6 @@ airflow dags trigger Ecommerce_Pipeline
 ```
 
 
-Notion PDF:[b8798434-792b-4c71-af71-3cc4149f46dd_E-commerce_Analysis_system.pdf](https://github.com/user-attachments/files/27637174/b8798434-792b-4c71-af71-3cc4149f46dd_E-commerce_Analysis_system.pdf)
+Notion PDF:[E-commerce_Analysis_system.pdf](https://github.com/user-attachments/files/27637339/E-commerce_Analysis_system.pdf)
+
 
